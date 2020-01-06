@@ -1,0 +1,185 @@
+---- GROUP ----
+
+1.	Hemanth Inakollu	 <hemanthi@buffalo.edu>	 50316838
+2.	Sai Krishna Uppala	<suppala2@buffalo.edu>   50288219
+3.	Ravikiran Sunnam  	 <rsunnam@buffalo.edu>   50320153
+
+			   ARGUMENT PASSING
+			   ================
+
+---- DATA STRUCTURES ----
+
+N/A
+
+---- ALGORITHMS ----
+
+>> A2: Briefly describe how you implemented argument parsing.  
+
+We could get the string passed while running the program from process_execute i.e file_name. We divided the String into two parts where first divided word is the Command and rest are the arguments. We then created a thread named as Command name and rest of the arguments are passed to start process which then passes to load and setup stack so that they are copied into the stack. 
+
+In setup_stack we store the arguments and then the command in the stack using memcpy function. We parse the argument string from right to left so that esp pointer is used to decrements and store all the argument words in the stack and then their addresses.
+
+>> How do you arrange for the elements of argv[] to be in the right order?
+
+We use esp pointer to store elements in the stack and arguments are stored from the back ward directs and top down order in the memory.
+ 
+>> How do you avoid overflowing the stack page?
+
+We use is_valid_addr() that checks the all memory pointing issues in the pintos system and also other validating mechanism so that user memory access is correct from the kernel.
+
+---- RATIONALE ----
+
+>> A3: Why does Pintos implement strtok_r() but not strtok()?
+
+strtok_r() will save the state of string modification using a pointer when compared to strtok().
+
+>> A4: In Pintos, the kernel separates commands into a executable name
+>> and arguments.  In Unix-like systems, the shell does this
+>> separation.  Identify at least two advantages of the Unix approach.
+
+1.	It reduces the time spent in kernel and work load on the kernel as this this will carried out by shell in Unix.
+2.	It is safe when shell performs this action at user level rather than kernel. This ensures that probable bug code is out of the kernel.
+
+			     
+
+			SYSTEM CALLS 
+			     ============
+
+---- DATA STRUCTURES ----
+
+>> B1: Copy here the declaration of each new or changed `struct' or
+>> `struct' member, global or static variable, `typedef', or
+>> enumeration.  Identify the purpose of each in 25 words or less.
+
+Below Elements are added to struct thread to handle Parent and Child processing throughout the system.
+
+Struct thread
+{
+struct list child_list;   /* List to store child threads */         
+int exit_status;           /* Exit Status of the thread */        
+struct list_elem child_elem;    /* Pointer to access child_list */ 
+struct semaphore waiting;  /* Synchronization between parent and child  threads */
+struct list file_list;   /* List to store file instances */ 
+int fd;    /* File Descriptor used for mapping to System calls */
+}
+
+static struct lock lock_file; /* Synchronization Primitive for File Handling */
+
+struct fileFd
+{
+    struct list_elem f_elem;
+    int fd_val;
+    struct file* file_orig;
+    char f_name[14];
+};
+
+>> B2: Describe how file descriptors are associated with open files.
+>> Are file descriptors unique within the entire OS or just within a
+>> single process?
+
+File Descriptors are used to map system calls for file operations.These are used to open the file for performing any operation the file through file system calls. File Descriptors are unique and has designated file associated with it. 
+
+---- ALGORITHMS ----
+
+>> B3: Describe your code for reading and writing user data from the
+>> kernel.
+
+Read:
+
+We initially check whether the Buffer i.e give to read has correct pointer addresses before accessing the file list and acquiring lock on the file. So when we have the correct buffer, then We check the file list for the required file on which read operation should be performed. When we find the correct file we acquire lock on it to prevent race condition. Then we internally call file_read() to perform the read operation. Then we release the lock. We also check the conditions like file list is empty etc before calling the file_read() function.
+
+
+
+Write:
+
+Similar to the read system call flow of validating buffer pointers checking for null conditions is implemented in write system call. Usually we call file_write() for writing to a file after checking it from the file_list. Same mechanism is used for lock acquiring and releasing before and after write operation. Additionally we check that executable program file cannot written using file_dent_write() which is totally implemented in Load() function by having a list of running user program file names in a list. 
+
+
+
+>> B4: Suppose a system call causes a full page (4,096 bytes) of data
+>> to be copied from user space into the kernel.  What is the least
+>> and the greatest possible number of inspections of the page table
+>> (e.g. calls to pagedir_get_page()) that might result?  What about
+>> for a system call that only copies 2 bytes of data?  Is there room
+>> for improvement in these numbers, and how much?
+
+For copying data from user into the kernel. If it is stored as an ELF executable (possibly as
+another file type, but ELF is the only one implemented at the moment). There is an inspection of the page table required every time a new page 
+is allocated.
+
+The least number of possible inspections with 4,096 bytes is one inspection
+in the case where a segment size for ELF in memory is greater than or equal
+to the segment size in files. The page size also needs to be large enough (
+In this case it is). The greatest number can be 4,096 number of inspections, 
+if each ELF segment is only one byte in size ie 1 inspection for each byte.
+
+For 2 bytes the least number of inspections is also 1. The greatest number
+of inspections can only be 2 (no of bytes).
+
+There can be room for improvement on these numbers because segments do
+not have to be loaded into their own pages, many segments could fit inside
+a page is the page size is much greater than it.
+
+
+>> B5: Briefly describe your implementation of the "wait" system call
+>> and how it interacts with process termination.
+
+Wait System call internally calls process_wait()on the parent process to make sure that parent process will be in wait state until child process completes its execution and exits. We have used Semaphore synchronization primitive for synchronization between parent and child process. In process_wait() it checks whether a child exists for a parent in the list of child processes. If yes, then above procedure is enforced otherwise it exits with a code -1. Child process is removed from the list of child process for that Parent process. Then parent process resumes it execution and continues as per the implementation.
+
+>> B6: Any access to user program memory at a user-specified address
+>> can fail due to a bad pointer value.  Such accesses must cause the
+>> process to be terminated.  System calls are fraught with such
+>> accesses, e.g. a "write" system call requires reading the system
+>> call number from the user stack, then each of the call's three
+>> arguments, then an arbitrary amount of user memory, and any of
+>> these can fail at any point.  This poses a design and
+>> error-handling problem: how do you best avoid obscuring the primary
+>> function of code in a morass of error-handling?  Furthermore, when
+>> an error is detected, how do you ensure that all temporarily
+>> allocated resources (locks, buffers, etc.) are freed?  In a few
+>> paragraphs, describe the strategy or strategies you adopted for
+>> managing these issues.  Give an example.
+
+In syscall_Handler(), Before initialing any system call with the given esp pointer, We have ensured that pointer addresses value is validated against all error cases like pointing to kernel memory address using is_valid_addr(), When the pointer is pointing to a address beyond the stack pointer range and when pointer NULL. When these cases are encountered, We exit the process with a code -1. Again on every increment of Stack pointer during execution of system calls, we check the same criteria as above.  We allocate buffers , locks etc when we carefully check these conditions at every stage of accessing memory same as above and ensure that if there is any issue, Thread will be exited and page will be deleted. 
+
+---- SYNCHRONIZATION ----
+
+>> B7: The "exec" system call returns -1 if loading the new executable
+>> fails, so it cannot return before the new executable has completed
+>> loading.  How does your code ensure this?  How is the load
+>> success/failure status passed back to the thread that calls "exec"?
+
+We have internally called process_execute() which creates a new thread for the executable. If there is an issue with load() which is initiated by start_process() then we get the success as false and thread_exit() is initiated and it returns -1. So “-1” is returned when there is a load failure and a console message is displayed to the user. If success is true then Page is created for the executable and execution continues. 
+
+>> B8: Consider parent process P with child process C.  How do you
+>> ensure proper synchronization and avoid race conditions when P
+>> calls wait(C) before C exits?  After C exits?  How do you ensure
+>> that all resources are freed in each case?  How about when P
+>> terminates without waiting, before C exits?  After C exits?  Are
+>> there any special cases?
+
+We have used Semaphore variable which has sema_down() and sema_up()  to ensure synchronization and avoid race conditions between parent and child processes. When there is a child process and parent needs to wait for its execution we call sema_down() on child process thread after removing it from the child list. When child process exits sema_up() on child thread is called. This ensures that there is proper wait mechanism between parent and child processes. 
+
+---- RATIONALE ----
+
+>> B9: Why did you choose to implement access to user memory from the
+>> kernel in the way that you did?
+
+As we have thoroughly validated the pointers that access user memory, so we went forward with the above approach. 
+
+>> B10: What advantages or disadvantages can you see to your design
+>> for file descriptors?
+
+Advantages:
+
+1)	File Descriptors are used to uniquely identify opened files by kernel on which various operations are performed. 
+
+Disadvantages:
+
+1)	These File Descriptors sometimes can occupy more kernel space in the kernel when there is huge file Handling which is not recommended 
+
+>> B11: The default tid_t to pid_t mapping is the identity mapping.
+>> If you changed it, what advantages are there to your approach?
+
+We did not change this as we could achieve the expected functionality.	   
+
